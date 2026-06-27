@@ -129,7 +129,7 @@ with tab2:
         
         st.markdown("---")
         
-        # 💡 [구조 최적화]: '달력 뷰 대제목'을 선언한 뒤, 그 바로 아랫단에 설정 메뉴와 일정을 일체형으로 배치
+        # 2. 달력 뷰 대제목 및 옵션 패널
         st.subheader("📆 날짜별 달력 뷰 및 관리")
         
         with st.expander("⚙️ 나만의 커스텀 카테고리 태그 추가/관리하기", expanded=False):
@@ -145,7 +145,7 @@ with tab2:
             
             st.markdown("  \n".join([f"- 현재 사용 가능한 태그 목록: {', '.join([f'`{c}`' for c in st.session_state.custom_categories])}"]))
             
-        # 💡 구분선(---)을 없애고 바로 달력 아코디언이 이어지도록 유도
+        # 달력 일자별 렌더링 파트
         if "시작시간" in df.columns:
             df['날짜'] = df['시작시간'].apply(lambda x: str(x).split(" ")[0] if " " in str(x) else str(x))
             unique_dates = sorted(df['날짜'].unique())
@@ -153,7 +153,7 @@ with tab2:
             updated_events = []
             
             for date in unique_dates:
-                with st.expander(f"📅 {date} 일자 계획 확인하기", expanded=True):
+                with st.expander(f"📅 {date}", expanded=True):
                     day_df = df[df['날짜'] == date].sort_values(by="시작시간", ascending=True)
                     
                     for idx, row in day_df.iterrows():
@@ -171,6 +171,7 @@ with tab2:
                             
                         current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
                         
+                        # 수정 토글 상태에 따른 조건부 가변 컬럼 매핑
                         if st.session_state.get(toggle_key, False):
                             c_btn, c_select, c_txt = st.columns([1.5, 2.0, 5.5])
                         else:
@@ -181,6 +182,7 @@ with tab2:
                             
                         if is_edit_mode:
                             with c_select:
+                                # 💡 드롭다운 박스가 나타났을 때도 본문 텍스트와 완벽히 정렬되도록 감싸는 마진 추가 가능
                                 selected_cat = st.selectbox(
                                     "변경",
                                     options=st.session_state.custom_categories,
@@ -188,13 +190,18 @@ with tab2:
                                     key=event_key,
                                     label_visibility="collapsed"
                                 )
-                                row['car_category'] = selected_cat # 내부 데이터 정합성 유지
                                 row['카테고리'] = selected_cat
                         else:
                             selected_cat = current_val
                                 
                         with c_txt:
-                            st.markdown(f"⏰ {start_time} ~ {end_time} - **{row.get('내용', '내용 없음')}**{note_str}")
+                            # 💡 [디테일 보정]: div 태그의 padding-top 스타일을 주어 체크박스/드롭다운과 수직 중앙 정렬(줄맞춤)을 맞춤
+                            text_html = f"""
+                            <div style='padding-top: 4px; font-size: 16px; line-height: 1.5;'>
+                                ⏰ {start_time} ~ {end_time} - <b>{row.get('내용', '내용 없음')}</b>{note_str}
+                            </div>
+                            """
+                            st.markdown(text_html, unsafe_allow_html=True)
                         
                         updated_events.append(row.to_dict())
             
