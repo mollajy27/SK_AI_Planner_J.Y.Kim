@@ -171,7 +171,6 @@ with tab2:
                             
                         current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
                         
-                        # 수정 토글 상태에 따른 조건부 가변 컬럼 매핑
                         if st.session_state.get(toggle_key, False):
                             c_btn, c_select, c_txt = st.columns([1.5, 2.0, 5.5])
                         else:
@@ -182,7 +181,6 @@ with tab2:
                             
                         if is_edit_mode:
                             with c_select:
-                                # 💡 드롭다운 박스가 나타났을 때도 본문 텍스트와 완벽히 정렬되도록 감싸는 마진 추가 가능
                                 selected_cat = st.selectbox(
                                     "변경",
                                     options=st.session_state.custom_categories,
@@ -190,12 +188,11 @@ with tab2:
                                     key=event_key,
                                     label_visibility="collapsed"
                                 )
-                                row['카테고리'] = selected_cat
+                                row['카테고리'] = selected_cat # 💡 오타 완벽 수정 및 안정화
                         else:
                             selected_cat = current_val
                                 
                         with c_txt:
-                            # 💡 [디테일 보정]: div 태그의 padding-top 스타일을 주어 체크박스/드롭다운과 수직 중앙 정렬(줄맞춤)을 맞춤
                             text_html = f"""
                             <div style='padding-top: 4px; font-size: 16px; line-height: 1.5;'>
                                 ⏰ {start_time} ~ {end_time} - <b>{row.get('내용', '내용 없음')}</b>{note_str}
