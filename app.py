@@ -14,12 +14,19 @@ except KeyError:
 
 client = OpenAI(api_key=api_key)
 
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {
-            "role": "system", 
-            "content": """당신은 기존 플래너의 한계를 극복하는 '유연한 일정 관리 에이전트'입니다.
-사용자와 대화하며 일정을 조율해 주세요. 
+# 💡 [시간 맥락 추가] 파이썬이 현재 실제 사용자의 날짜와 시각을 실시간으로 계산합니다.
+now = datetime.now()
+current_time_str = now.strftime("%Y-%m-%d %H:%M")
+
+# 매 턴마다 현재 시간이 갱신된 최신 시스템 프롬프트를 사용하기 위해 구조를 분리합니다.
+system_instruction = f"""당신은 기존 플래너의 한계를 극복하는 '유연한 일정 관리 에이전트'입니다.
+사용자와 대화하며 일정을 조율해 주세요.
+
+★ 매우 중요 (시간적 맥락):
+현재 사용자가 대화하고 있는 기준 시각은 [{current_time_str}] 입니다.
+사용자가 '오늘', '내일', '이번 주 월요일', '7시' 등 상대적인 시간 표현을 쓰면, 반드시 이 기준 시각[{current_time_str}]을 바탕으로 정확한 연-월-일 및 24시간 형식(오후 7시면 19:00)을 계산하여 반영해야 합니다. 
+만약 현재 시각이 오후 5시인데 사용자가 '7시'라고 하면, 오전 7시가 아니라 다가올 '오후 7시(19:00)'를 의미하는 맥락임을 인지하세요.
+
 새로운 일정 요청이나 재배치 요청이 들어오면, 사용자의 '전체 최신 일정 목록'을 판단하여 
 답변 맨 마지막 줄에 반드시 [JSON_DATA] 포맷으로 누적하여 한꺼번에 출력해야 합니다.
 텍스트 설명과 [JSON_DATA] 사이에는 줄바꿈을 두 번 하세요.
@@ -27,12 +34,14 @@ if "messages" not in st.session_state:
 포맷 예시:
 [JSON_DATA]
 [
-  {"카테고리": "고정 일정", "일시": "2026-06-29 09:00", "내용": "데이터베이스 전공 수업", "비고": "공학관 301호"},
-  {"카테고리": "유연한 작업", "일시": "2026-06-29 15:00", "내용": "헬스장 운동", "비고": "가볍게 등 운동 1시간"}
+  {{"카테고리": "고정 일정", "일시": "2026-06-29 09:00", "내용": "데이터베이스 전공 수업", "비고": "공학관 301호"}},
+  {{"카테고리": "유연한 작업", "일시": "2026-06-29 15:00", "내용": "헬스장 운동", "비고": "가볍게 등 운동 1시간"}}
 ]
 [/JSON_DATA]"""
-        }
-    ]
+
+# 대화 기록 관리를 위한 세션 상태 저장 (메시지 배열에는 유저/어시스턴트 문답만 순수하게 유지)
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
 
 if "confirmed_events" not in st.session_state:
     st.session_state.confirmed_events = []
@@ -42,18 +51,20 @@ tab1, tab2 = st.tabs(["🤖 AI 비서와 실시간 조율", "📅 나의 확정 
 # ----------------- [Tab 1: AI 대화 창 (최신순 상단 배치)] -----------------
 with tab1:
     st.subheader("💬 AI 에이전트에게 일정을 말해보세요")
+    st.caption(f"🕒 현재 시스템 인지 시각: {current_time_str}") # 상단에 현재 시간 노출
     
-    # 💡 [구조 변경 1] 프롬프트 입력창을 대화 목록보다 맨 위에 강제 고정합니다.
-    user_input = st.chat_input("예: '월요일 오전 9시 전공수업, 오후 3시에 운동 갈래.'", key="top_chat_input")
+    user_input = st.chat_input("예: '오늘 7시에 신촌에서 약속이 있어. 일정표에 넣어줘.'", key="top_chat_input")
 
-    # 입력값이 들어왔을 때 로직을 먼저 처리합니다.
     if user_input:
-        st.session_state.messages.append({"role": "user", "content": user_input})
+        st.session_state.chat_messages.append({"role": "user", "content": user_input})
+
+        # API를 호출할 때, 실시간으로 갱신된 system_instruction을 맨 앞에 조립해서 보냅니다.
+        api_messages = [{"role": "system", "content": system_instruction}] + st.session_state.chat_messages
 
         # OpenAI 답변 생성
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=st.session_state.messages
+            messages=api_messages
         )
         raw_response = completion.choices[0].message.content
         
@@ -67,16 +78,13 @@ with tab1:
             except Exception as e:
                 pass
                 
-        st.session_state.messages.append({"role": "assistant", "content": raw_response})
-        st.rerun() # 화면을 즉시 새로고침하여 상단에 반영되도록 합니다.
+        st.session_state.chat_messages.append({"role": "assistant", "content": raw_response})
+        st.rerun()
 
     st.markdown("---")
     
-    # 💡 [구조 변경 2] 대화 리스트를 뒤집어서([::-1]) 최신 문답이 맨 위로 오게 출력합니다.
-    # 단, 시스템 프롬프트(index 0)는 출력에서 제외합니다.
-    chat_history = [m for m in st.session_state.messages if m["role"] != "system"]
-    
-    for message in reversed(chat_history):
+    # 대화 기록 최신순 역순 출력
+    for message in reversed(st.session_state.chat_messages):
         with st.chat_message(message["role"]):
             clean_content = message["content"].split("[JSON_DATA]")[0].strip()
             st.write(clean_content)
