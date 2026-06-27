@@ -188,22 +188,30 @@ with tab2:
         
         for date in unique_dates:
             with st.expander(f"📅 {date} 일자 계획 확인하기", expanded=True):
-                # 💡 원본 리스트(confirmed_events)와 동기화하기 위해 원본의 index 값을 유지한 채 렌더링
                 day_df = df_render[df_render['날짜'] == date]
                 
                 for idx, row in day_df.iterrows():
                     event_key = f"select_{row['시작시간']}_{idx}"
                     toggle_key = f"toggle_{row['시작시간']}_{idx}"
                     
-                    start_time = str(row.get('시작시간', '00:00')).split(" ")[1] if " " in str(row.get('시작시간', '')) else "00:00"
-                    end_time = str(row.get('종료시간', '23:59')).split(" ")[1] if " " in str(row.get('종료시간', '')) else "23:59"
+                    # 💡 [시간 표시 로직 보정]: 종료시간이 명시되지 않거나 시작시간과 같을 때를 감지
+                    start_time_obj = datetime.strptime(str(row.get('시작시간', '2026-01-01 00:00')), "%Y-%m-%d %H:%M")
+                    end_time_obj = datetime.strptime(str(row.get('종료시간', '2026-01-01 23:59')), "%Y-%m-%d %H:%M")
+                    
+                    start_str = start_time_obj.strftime("%H:%M")
+                    end_str = end_time_obj.strftime("%H:%M")
+                    
+                    # 시작시간과 종료시간이 같으면 시간만, 다르면 범위 표시
+                    if start_time_obj >= end_time_obj:
+                        time_display = f"⏰ {start_str}"
+                    else:
+                        time_display = f"⏰ {start_str} ~ {end_str}"
                     
                     note_content = str(row.get('비고', '')).strip()
                     note_str = f" ({note_content})" if note_content and note_content not in ["None", "nan", ""] else ""
                         
                     current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
                     
-                    # 수정을 위해 체크박스가 활성화되었을 때만 3열 레이아웃 구성
                     if st.session_state.get(toggle_key, False):
                         c_btn, c_select, c_txt = st.columns([1.5, 2.0, 5.5])
                     else:
@@ -214,7 +222,6 @@ with tab2:
                         
                     if is_edit_mode:
                         with c_select:
-                            # 💡 [정석적 닫기 처리]: on_change와 args를 활용해 변경 즉시 안전하게 백엔드 데이터를 바꾸고 창을 닫음
                             st.selectbox(
                                 "변경",
                                 options=st.session_state.custom_categories,
@@ -226,9 +233,10 @@ with tab2:
                             )
                             
                     with c_txt:
+                        # 💡 여기에 위에서 계산한 time_display 변수를 적용
                         text_html = f"""
                         <div style='display: flex; align-items: center; min-height: 40px; font-size: 16px;'>
-                            <span>⏰ {start_time} ~ {end_time} - <b>{row.get('내용', '내용 없음')}</b>{note_str}</span>
+                            <span>{time_display} - <b>{row.get('내용', '내용 없음')}</b>{note_str}</span>
                         </div>
                         """
                         st.markdown(text_html, unsafe_allow_html=True)
