@@ -66,45 +66,30 @@ with tab1:
     
     if user_input:
         st.session_state.chat_messages.append({"role": "user", "content": user_input})
+        st.write("---")
+        st.write("진행 중: AI에게 메시지를 전송하고 있습니다...")
         
         try:
-            # 1. API 호출
             api_messages = [{"role": "system", "content": system_instruction}] + st.session_state.chat_messages
-            with st.spinner("AI가 생각 중입니다..."):
-                completion = client.chat.completions.create(
-                    model="gpt-4o-mini", 
-                    messages=api_messages, 
-                    temperature=0.0
-                )
-                raw_response = completion.choices[0].message.content
-                
-            # 2. 결과 출력 및 JSON 파싱
+            # API 호출
+            completion = client.chat.completions.create(
+                model="gpt-4o-mini", 
+                messages=api_messages, 
+                temperature=0.0
+            )
+            raw_response = completion.choices[0].message.content
+            st.write("진행 중: 응답을 받았습니다.")
+            
             st.session_state.chat_messages.append({"role": "assistant", "content": raw_response})
+            st.rerun()
             
-            if "[JSON_DATA]" in raw_response:
-                try:
-                    data_part = raw_response.split("[JSON_DATA]")[1].split("[/JSON_DATA]")[0].strip()
-                    new_data = json.loads(data_part)
-                    
-                    # 데이터 강제 리스트화
-                    if isinstance(new_data, dict):
-                        st.session_state.confirmed_events = [new_data]
-                    else:
-                        st.session_state.confirmed_events = new_data
-                        
-                    st.success("일정이 반영되었습니다!")
-                except Exception as e:
-                    st.error(f"JSON 파싱 실패: {e}")
-                    st.text(f"Raw 데이터: {raw_response}") # 원본 데이터를 확인하여 오류 추적
         except Exception as e:
-            st.error(f"API 호출 중 오류 발생: {e}")
-            
-        st.rerun()
+            st.error(f"오류 발생: {str(e)}")
 
     # 메시지 표시
     for message in reversed(st.session_state.chat_messages):
         with st.chat_message(message["role"]):
-            st.write(message["content"].split("[JSON_DATA]")[0])
+            st.markdown(message["content"].split("[JSON_DATA]")[0])
 
 with tab2:
     if st.session_state.confirmed_events and isinstance(st.session_state.confirmed_events, list):
