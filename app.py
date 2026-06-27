@@ -61,31 +61,50 @@ def update_category_callback(target_idx, select_key, toggle_key):
 tab1, tab2 = st.tabs(["🤖 AI 비서와 실시간 조율", "📅 나의 확정 일정표 (List-up)"])
 
 with tab1:
-    st.subheader("💬 AI 에이전트에게 일정을 말해보세요")
-    user_input = st.chat_input("예: '다음주 월요일 13:30 셔틀버스 타야 해.'")
+    st.subheader("💬 AI 에이전트와 대화하기")
+    user_input = st.chat_input("일정을 입력하세요.")
+    
     if user_input:
         st.session_state.chat_messages.append({"role": "user", "content": user_input})
-        api_messages = [{"role": "system", "content": system_instruction}] + st.session_state.chat_messages
-        with st.spinner("AI 비서가 연산 중..."):
-            completion = client.chat.completions.create(model="gpt-4o-mini", messages=api_messages, temperature=0.0)
-            raw_response = completion.choices[0].message.content
+        
+        try:
+            # 1. API 호출
+            api_messages = [{"role": "system", "content": system_instruction}] + st.session_state.chat_messages
+            with st.spinner("AI가 생각 중입니다..."):
+                completion = client.chat.completions.create(
+                    model="gpt-4o-mini", 
+                    messages=api_messages, 
+                    temperature=0.0
+                )
+                raw_response = completion.choices[0].message.content
+                
+            # 2. 결과 출력 및 JSON 파싱
+            st.session_state.chat_messages.append({"role": "assistant", "content": raw_response})
+            
             if "[JSON_DATA]" in raw_response:
                 try:
                     data_part = raw_response.split("[JSON_DATA]")[1].split("[/JSON_DATA]")[0].strip()
                     new_data = json.loads(data_part)
                     
-                    # 💡 핵심 방어 코드: 단일 딕셔너리면 리스트로 감싸고, 이미 리스트면 그대로 유지
+                    # 데이터 강제 리스트화
                     if isinstance(new_data, dict):
                         st.session_state.confirmed_events = [new_data]
-                    elif isinstance(new_data, list):
+                    else:
                         st.session_state.confirmed_events = new_data
                         
+                    st.success("일정이 반영되었습니다!")
                 except Exception as e:
-                    st.error(f"데이터 파싱 오류: {e}")
-            st.session_state.chat_messages.append({"role": "assistant", "content": raw_response})
+                    st.error(f"JSON 파싱 실패: {e}")
+                    st.text(f"Raw 데이터: {raw_response}") # 원본 데이터를 확인하여 오류 추적
+        except Exception as e:
+            st.error(f"API 호출 중 오류 발생: {e}")
+            
         st.rerun()
+
+    # 메시지 표시
     for message in reversed(st.session_state.chat_messages):
-        with st.chat_message(message["role"]): st.write(message["content"].split("[JSON_DATA]")[0])
+        with st.chat_message(message["role"]):
+            st.write(message["content"].split("[JSON_DATA]")[0])
 
 with tab2:
     if st.session_state.confirmed_events and isinstance(st.session_state.confirmed_events, list):
