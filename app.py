@@ -8,9 +8,9 @@ from datetime import datetime
 st.set_page_config(page_title="AI 유연한 일정 관리 비서", layout="wide")
 
 # 1. API 키 불러오기 및 초기화
-try:
+if "OPENAI_API_KEY" in st.secrets:
     api_key = st.secrets["OPENAI_API_KEY"]
-except KeyError:
+else:
     st.error("Streamlit Cloud 설정에서 OPENAI_API_KEY를 등록해 주세요!")
     st.stop()
 
@@ -58,25 +58,91 @@ with tab1:
     st.subheader("💬 AI 에이전트에게 일정을 말해보세요")
     st.caption(f"🕒 현재 시스템 인지 시각: {current_time_str} ({current_weekday})")
     
+    # 프롬프트 입력창을 대화 목록보다 맨 위에 강제 고정
     user_input = st.chat_input("예: '오늘 7시에 신촌에서 약속이 있어. 일정표에 넣어줘.'", key="top_chat_input")
 
     if user_input:
+        # 사용자 입력을 먼저 화면에 기록하기 위해 저장
         st.session_state.chat_messages.append({"role": "user", "content": user_input})
         api_messages = [{"role": "system", "content": system_instruction}] + st.session_state.chat_messages
 
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=api_messages
-        )
-        raw_response = completion.choices[0].message.content
-        
-        if "[JSON_DATA]" in raw_response:
+        # 💡 에러 방지를 위해 로딩 스피너 작동
+        with st.spinner("AI 비서가 일정을 연산하고 있습니다..."):
             try:
-                data_part = raw_response.split("[JSON_DATA]")[1].split("[/JSON_DATA]")[0].strip()
-                new_events = json.loads(data_part)
-                if isinstance(new_events, list):
-                    st.session_state.confirmed_events = new_events
-            except Exception as e:
-                pass
+                completion = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=api_messages
+                )
+                raw_response = completion.choices[0].message.content
                 
-        st.session_state.chat_messages.append({"role": "assistant", "content": raw_response})
+                # 비밀 작동: [JSON_DATA] 동기화 및 덮어쓰기(중복 방지)
+                if "[JSON_DATA]" in raw_response:
+                    try:
+                        data_part = raw_response.split("[JSON_DATA]")[1].split("[/JSON_DATA]")[0].strip()
+                        new_events = json.loads(data_part)
+                        if isinstance(new_events, list):
+                            st.session_state.confirmed_events = new_events
+                    except Exception as json_err:
+                        pass
+                        
+                st.session_state.chat_messages.append({"role": "assistant", "content": raw_response})
+            except Exception as api_err:
+                st.error(f"OpenAI API 호출 중 오류가 발생했습니다. 잔액을 확인해 보시거나 잠시 후 다시 시도해 주세요. ({str(api_err)})")
+        
+        st.rerun()
+
+    st.markdown("---")
+    # 대화 기록을 최신순(역순)으로 출력
+    for message in reversed(st.session_state.chat_messages):
+        with st.chat_message(message["role"]):
+            clean_content = message["content"].split("[JSON_DATA]")[0].strip()
+            st.write(clean_content)
+
+# ----------------- [Tab 2: 확정 일정 리스트 및 달력] -----------------
+with tab2:
+    if st.session_state.confirmed_events:
+        df = pd.DataFrame(st.session_state.confirmed_events)
+        
+        # 안전한 정렬을 위해 '시작시간' 컬럼이 존재할 때만 정렬 진행
+        if "시작시간" in df.columns:
+            df = df.sort_values(by="시작시간", ascending=True).reset_index(drop=True)
+        
+        # 💡 실시간 동기화된 타임라인 목록 표를 기본적으로 '접어놓기(expanded=False)'
+        with st.expander("📋 실시간 동기화된 타임라인 전체 목록 (표 형태로 보기)", expanded=False):
+            display_cols = [c for c in ["카테고리", "시작시간", "종료시간", "내용", "비고"] if c in df.columns]
+            st.dataframe(df[display_cols], use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("📆 날짜별 달력 뷰")
+        
+        if "시작시간" in df.columns:
+            df['날짜'] = df['시작시간'].apply(lambda x: str(x).split(" ")[0] if " " in str(x) else str(x))
+            unique_dates = sorted(df['날짜'].unique())
+            
+            for date in unique_dates:
+                # 💡 날짜별 달력 뷰 토글 박스를 기본적으로 '펴놓기(expanded=True)'
+                with st.expander(f"📅 {date} 일자 계획 확인하기", expanded=True):
+                    day_df = df[df['날짜'] == date]
+                    if "시작시간" in day_df.columns:
+                        day_df = day_df.sort_values(by="시작시간", ascending=True)
+                    
+                    for _, row in day_df.iterrows():
+                        start_time = str(row.get('시작시간', '00:00')).split(" ")[1] if " " in str(row.get('시작시간', '')) else "00:00"
+                        end_time = str(row.get('종료시간', '23:59')).split(" ")[1] if " " in str(row.get('종료시간', '')) else "23:59"
+                        
+                        # 💡 비고 내용이 공백이거나 없는 경우 괄호() 생략 로직
+                        note_content = str(row.get('비고', '')).strip()
+                        if note_content and note_content != "None" and note_content != "nan":
+                            note_str = f" ({note_content})"
+                        else:
+                            note_str = ""
+                            
+                        st.markdown(f"**[{row.get('카테고리', '일정')}]** ⏰ {start_time} ~ {end_time} - **{row.get('내용', '내용 없음')}**{note_str}")
+    else:
+        st.info("아직 확정된 일정이 없습니다. AI 비서 탭에서 일정을 조율해 보세요!")
+        
+    st.markdown("---")
+    if st.button("🚨 시스템 전체 초기화 (대화 내역 + 일정표)"):
+        st.session_state.chat_messages = []
+        st.session_state.confirmed_events = []
+        st.rerun()
