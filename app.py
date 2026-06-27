@@ -14,10 +14,6 @@ except KeyError:
 
 client = OpenAI(api_key=api_key)
 
-# 💡 [시간 맥락 추가] 파이썬이 현재 실제 사용자의 날짜와 시각을 실시간으로 계산합니다.
-now = datetime.now()
-current_time_str = now.strftime("%Y-%m-%d %H:%M")
-
 # 매 턴마다 현재 시간이 갱신된 최신 시스템 프롬프트를 사용하기 위해 구조를 분리합니다.
 # 💡 [수정된 부분] 현재 날짜와 '요일'까지 파이썬이 정확히 계산해서 AI에게 넘겨줍니다.
 now = datetime.now()
