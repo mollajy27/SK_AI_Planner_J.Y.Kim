@@ -153,7 +153,7 @@ with tab2:
             updated_events = []
             
             for date in unique_dates:
-                with st.expander(f"📅 {date}", expanded=True):
+                with st.expander(f"📅 {date} 일자 계획 확인하기", expanded=True):
                     day_df = df[df['날짜'] == date].sort_values(by="시작시간", ascending=True)
                     
                     for idx, row in day_df.iterrows():
