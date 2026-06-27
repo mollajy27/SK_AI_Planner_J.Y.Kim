@@ -88,43 +88,45 @@ with tab1:
         with st.chat_message(message["role"]): st.write(message["content"].split("[JSON_DATA]")[0])
 
 with tab2:
-    if st.session_state.confirmed_events:
-        df = pd.DataFrame(st.session_state.confirmed_events)
-        df = df.sort_values(by="시작시간").reset_index(drop=True)
-        # 데이터프레임이 변경될 때마다 session_state 동기화
-        st.session_state.confirmed_events = df.to_dict(orient="records")
+    if st.session_state.confirmed_events and isinstance(st.session_state.confirmed_events, list):
+        # 1. 데이터 검증: '시작시간' 키가 포함된 데이터만 필터링
+        valid_events = [e for e in st.session_state.confirmed_events if isinstance(e, dict) and '시작시간' in e]
         
-        unique_dates = sorted(df['시작시간'].apply(lambda x: x.split(" ")[0]).unique())
-        
-        for date in unique_dates:
-            with st.expander(f"📅 {date} 일자 계획 확인", expanded=True):
-                day_df = df[df['시작시간'].str.contains(date)]
-                
-                for idx, row in day_df.iterrows():
-                    # 안전한 키 생성: 인덱스와 시간 정보를 조합
-                    event_key = f"sel_{date}_{idx}"
-                    toggle_key = f"tog_{date}_{idx}"
-                    
-                    # session_state에 키가 없으면 초기화
-                    if toggle_key not in st.session_state: st.session_state[toggle_key] = False
-                    
-                    s_t = datetime.strptime(row['시작시간'], "%Y-%m-%d %H:%M")
-                    e_t = datetime.strptime(row['종료시간'], "%Y-%m-%d %H:%M")
-                    time_display = f"⏰ {s_t.strftime('%H:%M')}" if s_t >= e_t else f"⏰ {s_t.strftime('%H:%M')} ~ {e_t.strftime('%H:%M')}"
-                    
-                    c1, c2 = st.columns([2, 8])
-                    with c1:
-                        # 키를 안정적으로 호출
-                        is_edit = st.checkbox(f"🏷️ {row.get('카테고리', '카테고리 없음')}", key=toggle_key)
-                    
-                    with c2:
-                        if is_edit:
-                            st.selectbox("변경", st.session_state.custom_categories, 
-                                         index=st.session_state.custom_categories.index(row.get('카테고리', '카테고리 없음')),
-                                         key=event_key, on_change=update_category_callback, 
-                                         args=(idx, event_key, toggle_key))
-                        else:
-                            st.markdown(f"**{time_display} - {row['내용']}**")
+        if valid_events:
+            df = pd.DataFrame(valid_events)
+            df = df.sort_values(by="시작시간").reset_index(drop=True)
+            st.session_state.confirmed_events = df.to_dict(orient="records")
+            
+            unique_dates = sorted(df['시작시간'].apply(lambda x: x.split(" ")[0]).unique())
+            
+            for date in unique_dates:
+                with st.expander(f"📅 {date} 일자 계획 확인", expanded=True):
+                    day_df = df[df['시작시간'].str.contains(date)]
+                    for idx, row in day_df.iterrows():
+                        event_key, toggle_key = f"sel_{date}_{idx}", f"tog_{date}_{idx}"
+                        if toggle_key not in st.session_state: st.session_state[toggle_key] = False
+                        
+                        # 안전한 시간 파싱
+                        try:
+                            s_t = datetime.strptime(row['시작시간'], "%Y-%m-%d %H:%M")
+                            e_t = datetime.strptime(row['종료시간'], "%Y-%m-%d %H:%M")
+                            time_display = f"⏰ {s_t.strftime('%H:%M')}" if s_t >= e_t else f"⏰ {s_t.strftime('%H:%M')} ~ {e_t.strftime('%H:%M')}"
+                        except:
+                            time_display = "⏰ 시간 형식 오류"
+                        
+                        c1, c2 = st.columns([2, 8])
+                        with c1:
+                            is_edit = st.checkbox(f"🏷️ {row.get('카테고리', '카테고리 없음')}", key=toggle_key)
+                        with c2:
+                            if is_edit:
+                                st.selectbox("변경", st.session_state.custom_categories, 
+                                             index=st.session_state.custom_categories.index(row.get('카테고리', '카테고리 없음')),
+                                             key=event_key, on_change=update_category_callback, 
+                                             args=(idx, event_key, toggle_key))
+                            else:
+                                st.markdown(f"**{time_display} - {row.get('내용', '내용 없음')}**")
+        else:
+            st.info("표시할 수 있는 유효한 일정이 없습니다.")
     else:
         st.info("일정이 없습니다.")
         
