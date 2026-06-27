@@ -156,7 +156,7 @@ with tab2:
                         
                         for idx, row in day_df.iterrows():
                             event_key = f"cat_{row['시작시간']}_{idx}"
-                            toggle_key = f"toggle_{row['시작시간']}_{idx}" # 💡 인라인 토글용 고유 키
+                            toggle_key = f"toggle_{row['시작시간']}_{idx}"
                             
                             start_time = str(row.get('시작시간', '00:00')).split(" ")[1] if " " in str(row.get('시작시간', '')) else "00:00"
                             end_time = str(row.get('종료시간', '23:59')).split(" ")[1] if " " in str(row.get('종료시간', '')) else "23:59"
@@ -169,16 +169,18 @@ with tab2:
                                 
                             current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
                             
-                            # 💡 [핵심 UX 개선]: 3단 그리드 배치 (수정 버튼/텍스트 | 드롭다운 | 내용)
-                            c1, c2, c3 = st.columns([1, 1.5, 5])
+                            # 💡 [반응형 최적화]: 칸 레이아웃 비율을 조정하여 화면을 줄여도 안 깨지게 배치
+                            # 활성화 여부에 따라 그리드 배치를 동적으로 변경합니다.
+                            if st.session_state.get(toggle_key, False):
+                                c_btn, c_select, c_txt = st.columns([1.2, 1.8, 5])
+                            else:
+                                c_btn, c_txt = st.columns([1.2, 6.8]) # 평소엔 드롭다운 자리를 없애 공간 확보
                             
-                            with c1:
-                                # 사용자가 클릭하여 편집 상태를 트리거할 수 있는 체크박스 버튼 (버튼처럼 스타일링)
+                            with c_btn:
                                 is_edit_mode = st.checkbox(f"🏷️ [{current_val}]", key=toggle_key, help="클릭하여 카테고리 수정")
                                 
-                            with c2:
-                                if is_edit_mode:
-                                    # 클릭해서 True가 되었을 때만 드롭다운(selectbox)이 눈앞에 나타남!
+                            if is_edit_mode:
+                                with c_select:
                                     selected_cat = st.selectbox(
                                         "변경",
                                         options=st.session_state.custom_categories,
@@ -187,12 +189,10 @@ with tab2:
                                         label_visibility="collapsed"
                                     )
                                     row['카테고리'] = selected_cat
-                                else:
-                                    # 평소(False)에는 드롭다운 자리를 비워두거나 안내 텍스트 표시
-                                    st.caption("👈 클릭하여 변경")
-                                    selected_cat = current_val
+                            else:
+                                selected_cat = current_val
                                     
-                            with c3:
+                            with c_txt:
                                 st.markdown(f"⏰ {start_time} ~ {end_time} - **{row.get('내용', '내용 없음')}**{note_str}")
                             
                             updated_events.append(row.to_dict())
