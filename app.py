@@ -103,6 +103,14 @@ with tab1:
                         
                         new_events = json.loads(data_part)
                         if isinstance(new_events, list):
+                            # 💡 [데이터 보존 파이프라인]: AI가 준 새 일정 데이터에 기존 사용자의 커스텀 카테고리를 매핑하여 보존
+                            current_memory = {f"{ev.get('시작시간')}_{ev.get('내용')}": ev.get('카테고리') for ev in st.session_state.confirmed_events if ev.get('카테고리') != "카테고리 없음"}
+                            
+                            for new_ev in new_events:
+                                match_key = f"{new_ev.get('시작시간')}_{new_ev.get('내용')}"
+                                if match_key in current_memory:
+                                    new_ev['카테고리'] = current_memory[match_key] # 사용자가 설정했던 기존 카테고리 주입
+                                    
                             st.session_state.confirmed_events = new_events
                     except Exception as json_err:
                         pass
@@ -185,7 +193,6 @@ with tab2:
                         with c_btn:
                             is_edit_mode = st.checkbox(f"🏷️ [{current_val}]", key=toggle_key, help="클릭하여 카테고리 수정")
                             
-                        # 💡 [핵심 UX 개선]: 드롭다운이 켜져 있든 꺼져 있든 관계없이 항상 선택된 상태를 실시간 동기화
                         if is_edit_mode:
                             with c_select:
                                 selected_cat = st.selectbox(
@@ -195,13 +202,30 @@ with tab2:
                                     key=event_key,
                                     label_visibility="collapsed"
                                 )
-                                current_val = selected_cat # 즉시 대입
+                                # 💡 [UX 혁신]: 사용자가 다른 카테고리를 고르는 순간 즉시 체크박스 세션을 False로 바꾸고 화면 리프레시
+                                if selected_cat != current_val:
+                                    row['카테고리'] = selected_cat
+                                    st.session_state[toggle_key] = False
+                                    
+                                    # 임시 업데이트 리스트 반영 후 즉시 새로고침하여 확정 및 닫기 처리
+                                    for tmp_idx, tmp_row in day_df.iterrows():
+                                        if tmp_idx == idx:
+                                            tmp_row['카테고리'] = selected_cat
+                                        updated_events.append(tmp_row.to_dict())
+                                    
+                                    # 나머지 날짜 데이터 채우기
+                                    rest_df = df[df['날짜'] != date]
+                                    for _, rest_row in rest_df.iterrows():
+                                        updated_events.append(rest_row.to_dict())
+                                        
+                                    st.session_state.confirmed_events = updated_events
+                                    st.rerun()
+                        else:
+                            selected_cat = current_val
                         
-                        # 최종 변환 데이터 반영 (체크 해제 시 유실 방지 패치)
-                        row['카테고리'] = current_val
+                        row['카테고리'] = selected_cat
                                 
                         with c_txt:
-                            # 💡 [Flexbox 중앙 정렬]: 높낮이가 완벽하게 맞물리는 모던 CSS 정렬 파이프라인
                             text_html = f"""
                             <div style='display: flex; align-items: center; min-height: 40px; font-size: 16px;'>
                                 <span>⏰ {start_time} ~ {end_time} - <b>{row.get('내용', '내용 없음')}</b>{note_str}</span>
@@ -211,7 +235,15 @@ with tab2:
                         
                         updated_events.append(row.to_dict())
             
-            st.session_state.confirmed_events = updated_events
+            # 중복 방지를 위한 안전한 연산 처리
+            seen = set()
+            final_unique_events = []
+            for e in updated_events:
+                k = f"{e.get('시작시간')}_{e.get('내용')}"
+                if k not in seen:
+                    seen.add(k)
+                    final_unique_events.append(e)
+            st.session_state.confirmed_events = final_unique_events
 
     else:
         st.info("아직 확정된 일정이 없습니다. AI 비서 탭에서 일정을 조율해 보세요!")
