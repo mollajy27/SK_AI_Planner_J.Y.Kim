@@ -72,9 +72,16 @@ with tab1:
             if "[JSON_DATA]" in raw_response:
                 try:
                     data_part = raw_response.split("[JSON_DATA]")[1].split("[/JSON_DATA]")[0].strip()
-                    new_events = json.loads(data_part)
-                    st.session_state.confirmed_events = new_events
-                except: pass
+                    new_data = json.loads(data_part)
+                    
+                    # 💡 핵심 방어 코드: 단일 딕셔너리면 리스트로 감싸고, 이미 리스트면 그대로 유지
+                    if isinstance(new_data, dict):
+                        st.session_state.confirmed_events = [new_data]
+                    elif isinstance(new_data, list):
+                        st.session_state.confirmed_events = new_data
+                        
+                except Exception as e:
+                    st.error(f"데이터 파싱 오류: {e}")
             st.session_state.chat_messages.append({"role": "assistant", "content": raw_response})
         st.rerun()
     for message in reversed(st.session_state.chat_messages):
