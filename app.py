@@ -41,7 +41,7 @@ for m_offset in [0, 1]:
         day_name = weekday_list[date_obj.weekday()]
         calendar_hint += f"- {date_str} ({day_name})\n"
 
-# 2. AI 에이전트 시스템 프롬프트 (데이터 출력 엄격화)
+# 2. AI 에이전트 시스템 프롬프트
 system_instruction = f"""당신은 기존 플래너의 한계를 극복하는 '유연한 일정 관리 에이전트'입니다.
 사용자와 대화하며 일정을 조율해 주세요.
 
@@ -89,7 +89,6 @@ with tab1:
 
         with st.spinner("AI 비서가 일정을 연산하고 있습니다..."):
             try:
-                # 💡 규칙 엄격을 위한 temperature=0.0 값 주입
                 completion = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=api_messages,
@@ -97,11 +96,9 @@ with tab1:
                 )
                 raw_response = completion.choices[0].message.content
                 
-                # 데이터 파싱 안정성 보강 (백틱 코드블록 기호가 섞여 들어오더라도 강제 제거 처리)
                 if "[JSON_DATA]" in raw_response and "[/JSON_DATA]" in raw_response:
                     try:
                         data_part = raw_response.split("[JSON_DATA]")[1].split("[/JSON_DATA]")[0].strip()
-                        # AI가 백틱 랩핑 버그를 냈을 경우를 대비한 방어 코드 추가
                         data_part = data_part.replace("```json", "").replace("```", "").strip()
                         
                         new_events = json.loads(data_part)
@@ -119,7 +116,6 @@ with tab1:
     st.markdown("---")
     for message in reversed(st.session_state.chat_messages):
         with st.chat_message(message["role"]):
-            # UI 노출 시 마커 데이터를 분리하여 대화 본문만 출력
             clean_content = message["content"].split("[JSON_DATA]")[0].strip()
             st.write(clean_content)
 
@@ -134,6 +130,7 @@ with tab2:
         if "시작시간" in df.columns:
             df = df.sort_values(by="시작시간", ascending=True).reset_index(drop=True)
         
+        # 1. 실시간 데이터프레임 원본 표 보기
         with st.expander("📋 실시간 동기화된 타임라인 전체 목록 (표 형태로 보기)", expanded=False):
             display_cols = [c for c in ["카테고리", "시작시간", "종료시간", "내용", "비고"] if c in df.columns]
             st.dataframe(df[display_cols], use_container_width=True)
@@ -179,6 +176,7 @@ with tab2:
                             
                         current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
                         
+                        # 레이아웃 배치 구조 정의
                         if st.session_state.get(toggle_key, False):
                             c_btn, c_select, c_txt = st.columns([1.5, 2.0, 5.5])
                         else:
@@ -187,6 +185,7 @@ with tab2:
                         with c_btn:
                             is_edit_mode = st.checkbox(f"🏷️ [{current_val}]", key=toggle_key, help="클릭하여 카테고리 수정")
                             
+                        # 💡 [핵심 UX 개선]: 드롭다운이 켜져 있든 꺼져 있든 관계없이 항상 선택된 상태를 실시간 동기화
                         if is_edit_mode:
                             with c_select:
                                 selected_cat = st.selectbox(
@@ -196,14 +195,16 @@ with tab2:
                                     key=event_key,
                                     label_visibility="collapsed"
                                 )
-                                row['카테고리'] = selected_cat
-                        else:
-                            selected_cat = current_val
+                                current_val = selected_cat # 즉시 대입
+                        
+                        # 최종 변환 데이터 반영 (체크 해제 시 유실 방지 패치)
+                        row['카테고리'] = current_val
                                 
                         with c_txt:
+                            # 💡 [Flexbox 중앙 정렬]: 높낮이가 완벽하게 맞물리는 모던 CSS 정렬 파이프라인
                             text_html = f"""
-                            <div style='padding-top: 4px; font-size: 16px; line-height: 1.5;'>
-                                ⏰ {start_time} ~ {end_time} - <b>{row.get('내용', '내용 없음')}</b>{note_str}
+                            <div style='display: flex; align-items: center; min-height: 40px; font-size: 16px;'>
+                                <span>⏰ {start_time} ~ {end_time} - <b>{row.get('내용', '내용 없음')}</b>{note_str}</span>
                             </div>
                             """
                             st.markdown(text_html, unsafe_allow_html=True)
