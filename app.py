@@ -34,52 +34,52 @@ if "messages" not in st.session_state:
         }
     ]
 
-# 초기 예시 데이터 제거 (깨끗한 테스트를 위해 빈 리스트로 시작)
 if "confirmed_events" not in st.session_state:
     st.session_state.confirmed_events = []
 
 tab1, tab2 = st.tabs(["🤖 AI 비서와 실시간 조율", "📅 나의 확정 일정표 (List-up)"])
 
-# ----------------- [Tab 1: AI 대화 창] -----------------
+# ----------------- [Tab 1: AI 대화 창 (최신순 상단 배치)] -----------------
 with tab1:
     st.subheader("💬 AI 에이전트에게 일정을 말해보세요")
     
-    for message in st.session_state.messages:
-        if message["role"] != "system":
-            with st.chat_message(message["role"]):
-                clean_content = message["content"].split("[JSON_DATA]")[0].strip()
-                st.write(clean_content)
+    # 💡 [구조 변경 1] 프롬프트 입력창을 대화 목록보다 맨 위에 강제 고정합니다.
+    user_input = st.chat_input("예: '월요일 오전 9시 전공수업, 오후 3시에 운동 갈래.'", key="top_chat_input")
 
-    if user_input := st.chat_input("예: '월요일 오전 9시 전공수업, 오후 3시에 운동 갈래.'"):
-        with st.chat_message("user"):
-            st.write(user_input)
+    # 입력값이 들어왔을 때 로직을 먼저 처리합니다.
+    if user_input:
         st.session_state.messages.append({"role": "user", "content": user_input})
 
-        with st.chat_message("assistant"):
-            response_placeholder = st.empty()
-            
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=st.session_state.messages
-            )
-            
-            raw_response = completion.choices[0].message.content
-            
-            if "[JSON_DATA]" in raw_response:
-                try:
-                    data_part = raw_response.split("[JSON_DATA]")[1].split("[/JSON_DATA]")[0].strip()
-                    new_events = json.loads(data_part)
-                    if isinstance(new_events, list):
-                        # 💡 [버그 수정 1] 기존 데이터를 extend(더하기)하지 않고, 최신 전체 일정으로 복사(교체)합니다.
-                        st.session_state.confirmed_events = new_events
-                        st.success("💡 최신 일정으로 동기화되었습니다!")
-                except Exception as e:
-                    pass
-            
-            clean_response = raw_response.split("[JSON_DATA]")[0].strip()
-            response_placeholder.write(clean_response)
-            
+        # OpenAI 답변 생성
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=st.session_state.messages
+        )
+        raw_response = completion.choices[0].message.content
+        
+        # JSON 데이터 동기화
+        if "[JSON_DATA]" in raw_response:
+            try:
+                data_part = raw_response.split("[JSON_DATA]")[1].split("[/JSON_DATA]")[0].strip()
+                new_events = json.loads(data_part)
+                if isinstance(new_events, list):
+                    st.session_state.confirmed_events = new_events
+            except Exception as e:
+                pass
+                
         st.session_state.messages.append({"role": "assistant", "content": raw_response})
+        st.rerun() # 화면을 즉시 새로고침하여 상단에 반영되도록 합니다.
+
+    st.markdown("---")
+    
+    # 💡 [구조 변경 2] 대화 리스트를 뒤집어서([::-1]) 최신 문답이 맨 위로 오게 출력합니다.
+    # 단, 시스템 프롬프트(index 0)는 출력에서 제외합니다.
+    chat_history = [m for m in st.session_state.messages if m["role"] != "system"]
+    
+    for message in reversed(chat_history):
+        with st.chat_message(message["role"]):
+            clean_content = message["content"].split("[JSON_DATA]")[0].strip()
+            st.write(clean_content)
 
 # ----------------- [Tab 2: 확정 일정 리스트 및 달력] -----------------
 with tab2:
@@ -87,8 +87,6 @@ with tab2:
     
     if st.session_state.confirmed_events:
         df = pd.DataFrame(st.session_state.confirmed_events)
-        
-        # 💡 [버그 수정 2] '일시' 컬럼을 기준으로 표를 시간 순서대로 정렬합니다.
         df = df.sort_values(by="일시", ascending=True).reset_index(drop=True)
         
         st.dataframe(
@@ -108,7 +106,6 @@ with tab2:
         for date in unique_dates:
             with st.expander(f"📅 {date} 일자 계획 확인하기"):
                 day_df = df[df['날짜'] == date]
-                # 날짜 내에서도 시간 순 정렬
                 day_df = day_df.sort_values(by="일시", ascending=True)
                 for _, row in day_df.iterrows():
                     time_str = row['일시'].split(" ")[1] if " " in str(row['일시']) else "하루 종일"
