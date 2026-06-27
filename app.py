@@ -113,98 +113,100 @@ with tab1:
 
 # ----------------- [Tab 2: 확정 일정표 및 카테고리 관리] -----------------
 with tab2:
-    col_main, col_side = st.columns([3, 1])
-    
-    with col_side:
-        st.write("⚙️ **카테고리 설정 컴포넌트**")
-        new_cat = st.text_input("➕ 카테고리 추가", placeholder="예: 운동, 알바 등")
-        if st.button("등록하기", use_container_width=True):
-            if new_cat and new_cat not in st.session_state.custom_categories:
-                st.session_state.custom_categories.append(new_cat)
-                st.toast(f"'{new_cat}' 카테고리가 등록되었습니다!")
-                st.rerun()
+    # 💡 [구조 혁신]: 사이드바 구조를 제거하고, 메인 단일 레이아웃으로 변경하여 가로 공간 확보
+    if st.session_state.confirmed_events:
+        df = pd.DataFrame(st.session_state.confirmed_events)
         
-        st.caption("현재 등록된 태그:")
-        st.write(", ".join([f"`{c}`" for c in st.session_state.custom_categories]))
+        if "카테고리" not in df.columns:
+            df["카테고리"] = "카테고리 없음"
         
-    with col_main:
-        if st.session_state.confirmed_events:
-            df = pd.DataFrame(st.session_state.confirmed_events)
+        if "시작시간" in df.columns:
+            df = df.sort_values(by="시작시간", ascending=True).reset_index(drop=True)
+        
+        # 1. 실시간 데이터프레임 원본 표 보기
+        with st.expander("📋 실시간 동기화된 타임라인 전체 목록 (표 형태로 보기)", expanded=False):
+            display_cols = [c for c in ["카테고리", "시작시간", "종료시간", "내용", "비고"] if c in df.columns]
+            st.dataframe(df[display_cols], use_container_width=True)
+        
+        st.markdown("---")
+        
+        # 💡 [핵심 변경]: 달력 뷰 바로 윗단에 접고 펼칠 수 있는 카테고리 관리 컴포넌트 전면 배치
+        with st.expander("⚙️ 나만의 커스텀 카테고리 태그 추가/관리하기", expanded=False):
+            c_input, c_btn = st.columns([3, 1])
+            with c_input:
+                new_cat = st.text_input("➕ 카테고리 추가", placeholder="예: 운동, 알바, 공부 등", label_visibility="collapsed")
+            with c_btn:
+                if st.button("태그 추가 등록", use_container_width=True):
+                    if new_cat and new_cat not in st.session_state.custom_categories:
+                        st.session_state.custom_categories.append(new_cat)
+                        st.toast(f"'{new_cat}' 태그가 등록되었습니다!")
+                        st.rerun()
             
-            if "카테고리" not in df.columns:
-                df["카테고리"] = "카테고리 없음"
-            
-            if "시작시간" in df.columns:
-                df = df.sort_values(by="시작시간", ascending=True).reset_index(drop=True)
-            
-            with st.expander("📋 실시간 동기화된 타임라인 전체 목록 (표 형태로 보기)", expanded=False):
-                display_cols = [c for c in ["카테고리", "시작시간", "종료시간", "내용", "비고"] if c in df.columns]
-                st.dataframe(df[display_cols], use_container_width=True)
-            
-            st.markdown("---")
-            st.subheader("📆 날짜별 달력 뷰 및 관리")
-            
-            if "시작시간" in df.columns:
-                df['날짜'] = df['시작시간'].apply(lambda x: str(x).split(" ")[0] if " " in str(x) else str(x))
-                unique_dates = sorted(df['날짜'].unique())
-                
-                updated_events = []
-                
-                for date in unique_dates:
-                    with st.expander(f"📅 {date} 일자 계획 확인하기", expanded=True):
-                        day_df = df[df['날짜'] == date].sort_values(by="시작시간", ascending=True)
-                        
-                        for idx, row in day_df.iterrows():
-                            event_key = f"cat_{row['시작시간']}_{idx}"
-                            toggle_key = f"toggle_{row['시작시간']}_{idx}"
-                            
-                            start_time = str(row.get('시작시간', '00:00')).split(" ")[1] if " " in str(row.get('시작시간', '')) else "00:00"
-                            end_time = str(row.get('종료시간', '23:59')).split(" ")[1] if " " in str(row.get('종료시간', '')) else "23:59"
-                            
-                            note_content = str(row.get('비고', '')).strip()
-                            if note_content and note_content != "None" and note_content != "nan":
-                                note_str = f" ({note_content})"
-                            else:
-                                note_str = ""
-                                
-                            current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
-                            
-                            # 💡 [반응형 최적화]: 칸 레이아웃 비율을 조정하여 화면을 줄여도 안 깨지게 배치
-                            # 활성화 여부에 따라 그리드 배치를 동적으로 변경합니다.
-                            if st.session_state.get(toggle_key, False):
-                                c_btn, c_select, c_txt = st.columns([1.2, 1.8, 5])
-                            else:
-                                c_btn, c_txt = st.columns([1.2, 6.8]) # 평소엔 드롭다운 자리를 없애 공간 확보
-                            
-                            with c_btn:
-                                is_edit_mode = st.checkbox(f"🏷️ [{current_val}]", key=toggle_key, help="클릭하여 카테고리 수정")
-                                
-                            if is_edit_mode:
-                                with c_select:
-                                    selected_cat = st.selectbox(
-                                        "변경",
-                                        options=st.session_state.custom_categories,
-                                        index=st.session_state.custom_categories.index(current_val),
-                                        key=event_key,
-                                        label_visibility="collapsed"
-                                    )
-                                    row['카테고리'] = selected_cat
-                            else:
-                                selected_cat = current_val
-                                    
-                            with c_txt:
-                                st.markdown(f"⏰ {start_time} ~ {end_time} - **{row.get('내용', '내용 없음')}**{note_str}")
-                            
-                            updated_events.append(row.to_dict())
-                
-                st.session_state.confirmed_events = updated_events
-
-        else:
-            st.info("아직 확정된 일정이 없습니다. AI 비서 탭에서 일정을 조율해 보세요!")
+            st.markdown("  \n".join([f"- 현재 사용 가능한 태그 목록: {', '.join([f'`{c}`' for c in st.session_state.custom_categories])}"]))
             
         st.markdown("---")
-        if st.button("🚨 시스템 전체 초기화 (대화 내역 + 일정표)"):
-            st.session_state.chat_messages = []
-            st.session_state.confirmed_events = []
-            st.session_state.custom_categories = ["카테고리 없음", "회사", "여가", "개인"]
-            st.rerun()
+        st.subheader("📆 날짜별 달력 뷰 및 관리")
+        
+        if "시작시간" in df.columns:
+            df['날짜'] = df['시작시간'].apply(lambda x: str(x).split(" ")[0] if " " in str(x) else str(x))
+            unique_dates = sorted(df['날짜'].unique())
+            
+            updated_events = []
+            
+            for date in unique_dates:
+                with st.expander(f"📅 {date} 일자 계획 확인하기", expanded=True):
+                    day_df = df[df['날짜'] == date].sort_values(by="시작시간", ascending=True)
+                    
+                    for idx, row in day_df.iterrows():
+                        event_key = f"cat_{row['시작시간']}_{idx}"
+                        toggle_key = f"toggle_{row['시작시간']}_{idx}"
+                        
+                        start_time = str(row.get('시작시간', '00:00')).split(" ")[1] if " " in str(row.get('시작시간', '')) else "00:00"
+                        end_time = str(row.get('종료시간', '23:59')).split(" ")[1] if " " in str(row.get('종료시간', '')) else "23:59"
+                        
+                        note_content = str(row.get('비고', '')).strip()
+                        if note_content and note_content != "None" and note_content != "nan":
+                            note_str = f" ({note_content})"
+                        else:
+                            note_str = ""
+                            
+                        current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
+                        
+                        # 동적 열 매핑 (수정 토글 상태에 따라 컴포넌트 배치 너비 자동 조율)
+                        if st.session_state.get(toggle_key, False):
+                            c_btn, c_select, c_txt = st.columns([1.5, 2.0, 5.5])
+                        else:
+                            c_btn, c_txt = st.columns([1.5, 7.5])
+                        
+                        with c_btn:
+                            is_edit_mode = st.checkbox(f"🏷️ [{current_val}]", key=toggle_key, help="클릭하여 카테고리 수정")
+                            
+                        if is_edit_mode:
+                            with c_select:
+                                selected_cat = st.selectbox(
+                                    "변경",
+                                    options=st.session_state.custom_categories,
+                                    index=st.session_state.custom_categories.index(current_val),
+                                    key=event_key,
+                                    label_visibility="collapsed"
+                                )
+                                row['카테고리'] = selected_cat
+                        else:
+                            selected_cat = current_val
+                                
+                        with c_txt:
+                            st.markdown(f"⏰ {start_time} ~ {end_time} - **{row.get('내용', '내용 없음')}**{note_str}")
+                        
+                        updated_events.append(row.to_dict())
+            
+            st.session_state.confirmed_events = updated_events
+
+    else:
+        st.info("아직 확정된 일정이 없습니다. AI 비서 탭에서 일정을 조율해 보세요!")
+        
+    st.markdown("---")
+    if st.button("🚨 시스템 전체 초기화 (대화 내역 + 일정표)"):
+        st.session_state.chat_messages = []
+        st.session_state.confirmed_events = []
+        st.session_state.custom_categories = ["카테고리 없음", "회사", "여가", "개인"]
+        st.rerun()
