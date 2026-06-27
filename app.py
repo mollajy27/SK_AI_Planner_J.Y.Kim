@@ -74,6 +74,15 @@ if "confirmed_events" not in st.session_state:
 if "custom_categories" not in st.session_state:
     st.session_state.custom_categories = ["카테고리 없음", "회사", "여가", "개인"]
 
+# 💡 [안정성 확보]: 카테고리 변경 시 안전하게 데이터를 처리하고 편집창을 닫는 콜백 함수
+def update_category_callback(target_idx, select_key, toggle_key):
+    if select_key in st.session_state:
+        chosen_cat = st.session_state[select_key]
+        # 데이터프레임 순서에 맞춰 해당 행의 카테고리 업데이트
+        st.session_state.confirmed_events[target_idx]['카테고리'] = chosen_cat
+        # 수정을 완료했으므로 체크박스 상태를 강제로 꺼짐(False) 처리
+        st.session_state[toggle_key] = False
+
 tab1, tab2 = st.tabs(["🤖 AI 비서와 실시간 조율", "📅 나의 확정 일정표 (List-up)"])
 
 # ----------------- [Tab 1: AI 대화 창] -----------------
@@ -103,13 +112,13 @@ with tab1:
                         
                         new_events = json.loads(data_part)
                         if isinstance(new_events, list):
-                            # 💡 [데이터 보존 파이프라인]: AI가 준 새 일정 데이터에 기존 사용자의 커스텀 카테고리를 매핑하여 보존
+                            # [데이터 보존 기존 로직 유지]
                             current_memory = {f"{ev.get('시작시간')}_{ev.get('내용')}": ev.get('카테고리') for ev in st.session_state.confirmed_events if ev.get('카테고리') != "카테고리 없음"}
                             
                             for new_ev in new_events:
                                 match_key = f"{new_ev.get('시작시간')}_{new_ev.get('내용')}"
                                 if match_key in current_memory:
-                                    new_ev['카테고리'] = current_memory[match_key] # 사용자가 설정했던 기존 카테고리 주입
+                                    new_ev['카테고리'] = current_memory[match_key]
                                     
                             st.session_state.confirmed_events = new_events
                     except Exception as json_err:
@@ -130,13 +139,13 @@ with tab1:
 # ----------------- [Tab 2: 확정 일정표 및 카테고리 관리] -----------------
 with tab2:
     if st.session_state.confirmed_events:
+        # 데이터 정렬 후 session_state에 리스트 형태로 즉시 재반영 (인덱스 일치를 위함)
         df = pd.DataFrame(st.session_state.confirmed_events)
-        
         if "카테고리" not in df.columns:
             df["카테고리"] = "카테고리 없음"
-        
         if "시작시간" in df.columns:
             df = df.sort_values(by="시작시간", ascending=True).reset_index(drop=True)
+        st.session_state.confirmed_events = df.to_dict(orient="records")
         
         # 1. 실시간 데이터프레임 원본 표 보기
         with st.expander("📋 실시간 동기화된 타임라인 전체 목록 (표 형태로 보기)", expanded=False):
@@ -159,91 +168,57 @@ with tab2:
             
             st.markdown("  \n".join([f"- 현재 사용 가능한 태그 목록: {', '.join([f'`{c}`' for c in st.session_state.custom_categories])}"]))
             
-        if "시작시간" in df.columns:
-            df['날짜'] = df['시작시간'].apply(lambda x: str(x).split(" ")[0] if " " in str(x) else str(x))
-            unique_dates = sorted(df['날짜'].unique())
-            
-            updated_events = []
-            
-            for date in unique_dates:
-                with st.expander(f"📅 {date} 일자 계획 확인하기", expanded=True):
-                    day_df = df[df['날짜'] == date].sort_values(by="시작시간", ascending=True)
+        # 날짜 분리 알고리즘
+        df_render = pd.DataFrame(st.session_state.confirmed_events)
+        df_render['날짜'] = df_render['시작시간'].apply(lambda x: str(x).split(" ")[0] if " " in str(x) else str(x))
+        unique_dates = sorted(df_render['날짜'].unique())
+        
+        for date in unique_dates:
+            with st.expander(f"📅 {date} 일자 계획 확인하기", expanded=True):
+                # 💡 원본 리스트(confirmed_events)와 동기화하기 위해 원본의 index 값을 유지한 채 렌더링
+                day_df = df_render[df_render['날짜'] == date]
+                
+                for idx, row in day_df.iterrows():
+                    event_key = f"select_{row['시작시간']}_{idx}"
+                    toggle_key = f"toggle_{row['시작시간']}_{idx}"
                     
-                    for idx, row in day_df.iterrows():
-                        event_key = f"cat_{row['시작시간']}_{idx}"
-                        toggle_key = f"toggle_{row['시작시간']}_{idx}"
+                    start_time = str(row.get('시작시간', '00:00')).split(" ")[1] if " " in str(row.get('시작시간', '')) else "00:00"
+                    end_time = str(row.get('종료시간', '23:59')).split(" ")[1] if " " in str(row.get('종료시간', '')) else "23:59"
+                    
+                    note_content = str(row.get('비고', '')).strip()
+                    note_str = f" ({note_content})" if note_content and note_content not in ["None", "nan", ""] else ""
                         
-                        start_time = str(row.get('시작시간', '00:00')).split(" ")[1] if " " in str(row.get('시작시간', '')) else "00:00"
-                        end_time = str(row.get('종료시간', '23:59')).split(" ")[1] if " " in str(row.get('종료시간', '')) else "23:59"
+                    current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
+                    
+                    # 수정을 위해 체크박스가 활성화되었을 때만 3열 레이아웃 구성
+                    if st.session_state.get(toggle_key, False):
+                        c_btn, c_select, c_txt = st.columns([1.5, 2.0, 5.5])
+                    else:
+                        c_btn, c_txt = st.columns([1.5, 7.5])
+                    
+                    with c_btn:
+                        is_edit_mode = st.checkbox(f"🏷️ [{current_val}]", key=toggle_key, help="클릭하여 카테고리 수정")
                         
-                        note_content = str(row.get('비고', '')).strip()
-                        if note_content and note_content != "None" and note_content != "nan":
-                            note_str = f" ({note_content})"
-                        else:
-                            note_str = ""
+                    if is_edit_mode:
+                        with c_select:
+                            # 💡 [정석적 닫기 처리]: on_change와 args를 활용해 변경 즉시 안전하게 백엔드 데이터를 바꾸고 창을 닫음
+                            st.selectbox(
+                                "변경",
+                                options=st.session_state.custom_categories,
+                                index=st.session_state.custom_categories.index(current_val),
+                                key=event_key,
+                                label_visibility="collapsed",
+                                on_change=update_category_callback,
+                                args=(idx, event_key, toggle_key)
+                            )
                             
-                        current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
-                        
-                        # 레이아웃 배치 구조 정의
-                        if st.session_state.get(toggle_key, False):
-                            c_btn, c_select, c_txt = st.columns([1.5, 2.0, 5.5])
-                        else:
-                            c_btn, c_txt = st.columns([1.5, 7.5])
-                        
-                        with c_btn:
-                            is_edit_mode = st.checkbox(f"🏷️ [{current_val}]", key=toggle_key, help="클릭하여 카테고리 수정")
-                            
-                        if is_edit_mode:
-                            with c_select:
-                                selected_cat = st.selectbox(
-                                    "변경",
-                                    options=st.session_state.custom_categories,
-                                    index=st.session_state.custom_categories.index(current_val),
-                                    key=event_key,
-                                    label_visibility="collapsed"
-                                )
-                                # 💡 [UX 혁신]: 사용자가 다른 카테고리를 고르는 순간 즉시 체크박스 세션을 False로 바꾸고 화면 리프레시
-                                if selected_cat != current_val:
-                                    row['카테고리'] = selected_cat
-                                    st.session_state[toggle_key] = False
-                                    
-                                    # 임시 업데이트 리스트 반영 후 즉시 새로고침하여 확정 및 닫기 처리
-                                    for tmp_idx, tmp_row in day_df.iterrows():
-                                        if tmp_idx == idx:
-                                            tmp_row['카테고리'] = selected_cat
-                                        updated_events.append(tmp_row.to_dict())
-                                    
-                                    # 나머지 날짜 데이터 채우기
-                                    rest_df = df[df['날짜'] != date]
-                                    for _, rest_row in rest_df.iterrows():
-                                        updated_events.append(rest_row.to_dict())
-                                        
-                                    st.session_state.confirmed_events = updated_events
-                                    st.rerun()
-                        else:
-                            selected_cat = current_val
-                        
-                        row['카테고리'] = selected_cat
-                                
-                        with c_txt:
-                            text_html = f"""
-                            <div style='display: flex; align-items: center; min-height: 40px; font-size: 16px;'>
-                                <span>⏰ {start_time} ~ {end_time} - <b>{row.get('내용', '내용 없음')}</b>{note_str}</span>
-                            </div>
-                            """
-                            st.markdown(text_html, unsafe_allow_html=True)
-                        
-                        updated_events.append(row.to_dict())
-            
-            # 중복 방지를 위한 안전한 연산 처리
-            seen = set()
-            final_unique_events = []
-            for e in updated_events:
-                k = f"{e.get('시작시간')}_{e.get('내용')}"
-                if k not in seen:
-                    seen.add(k)
-                    final_unique_events.append(e)
-            st.session_state.confirmed_events = final_unique_events
+                    with c_txt:
+                        text_html = f"""
+                        <div style='display: flex; align-items: center; min-height: 40px; font-size: 16px;'>
+                            <span>⏰ {start_time} ~ {end_time} - <b>{row.get('내용', '내용 없음')}</b>{note_str}</span>
+                        </div>
+                        """
+                        st.markdown(text_html, unsafe_allow_html=True)
 
     else:
         st.info("아직 확정된 일정이 없습니다. AI 비서 탭에서 일정을 조율해 보세요!")
