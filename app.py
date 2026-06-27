@@ -113,7 +113,6 @@ with tab1:
 
 # ----------------- [Tab 2: 확정 일정표 및 카테고리 관리] -----------------
 with tab2:
-    # 💡 [구조 혁신]: 사이드바 구조를 제거하고, 메인 단일 레이아웃으로 변경하여 가로 공간 확보
     if st.session_state.confirmed_events:
         df = pd.DataFrame(st.session_state.confirmed_events)
         
@@ -130,7 +129,9 @@ with tab2:
         
         st.markdown("---")
         
-        # 💡 [핵심 변경]: 달력 뷰 바로 윗단에 접고 펼칠 수 있는 카테고리 관리 컴포넌트 전면 배치
+        # 💡 [구조 최적화]: '달력 뷰 대제목'을 선언한 뒤, 그 바로 아랫단에 설정 메뉴와 일정을 일체형으로 배치
+        st.subheader("📆 날짜별 달력 뷰 및 관리")
+        
         with st.expander("⚙️ 나만의 커스텀 카테고리 태그 추가/관리하기", expanded=False):
             c_input, c_btn = st.columns([3, 1])
             with c_input:
@@ -144,9 +145,7 @@ with tab2:
             
             st.markdown("  \n".join([f"- 현재 사용 가능한 태그 목록: {', '.join([f'`{c}`' for c in st.session_state.custom_categories])}"]))
             
-        st.markdown("---")
-        st.subheader("📆 날짜별 달력 뷰 및 관리")
-        
+        # 💡 구분선(---)을 없애고 바로 달력 아코디언이 이어지도록 유도
         if "시작시간" in df.columns:
             df['날짜'] = df['시작시간'].apply(lambda x: str(x).split(" ")[0] if " " in str(x) else str(x))
             unique_dates = sorted(df['날짜'].unique())
@@ -172,7 +171,6 @@ with tab2:
                             
                         current_val = row['카테고리'] if row['카테고리'] in st.session_state.custom_categories else "카테고리 없음"
                         
-                        # 동적 열 매핑 (수정 토글 상태에 따라 컴포넌트 배치 너비 자동 조율)
                         if st.session_state.get(toggle_key, False):
                             c_btn, c_select, c_txt = st.columns([1.5, 2.0, 5.5])
                         else:
@@ -190,6 +188,7 @@ with tab2:
                                     key=event_key,
                                     label_visibility="collapsed"
                                 )
+                                row['car_category'] = selected_cat # 내부 데이터 정합성 유지
                                 row['카테고리'] = selected_cat
                         else:
                             selected_cat = current_val
