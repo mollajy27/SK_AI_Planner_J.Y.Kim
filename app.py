@@ -138,7 +138,13 @@ with tab1:
 
     if user_input:
         st.session_state.chat_messages.append({"role": "user", "content": user_input})
-        api_messages = [{"role": "system", "content": system_instruction}] + st.session_state.chat_messages
+        current_events_json = json.dumps(st.session_state.confirmed_events, ensure_ascii=False)
+
+        api_messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "system", "content": f"현재 확정된 일정 리스트(JSON): {current_events_json}"},
+            {"role": "system", "content": "너는 지금 이 JSON 리스트를 보고 있어. 사용자가 일정을 물으면 대화 내역이 아니라 이 리스트를 먼저 읽고 답변해."}
+        ] + st.session_state.chat_messages
 
         with st.spinner("AI 비서가 일정을 연산하고 있습니다..."):
             try:
@@ -150,11 +156,9 @@ with tab1:
                 raw_response = completion.choices[0].message.content
                 
 # --- [수정된 부분: 모든 JSON 블록을 반복 처리] ---
+                # --- [수정된 로직: 모든 [JSON_DATA]를 순차적으로 처리] ---
                 if "[JSON_DATA]" in raw_response:
-                    # 답변 전체를 [JSON_DATA] 기준으로 쪼갭니다.
                     parts = raw_response.split("[JSON_DATA]")
-                    
-                    # 0번 인덱스는 일반 텍스트이므로 1번부터 끝까지 루프
                     for part in parts[1:]:
                         if "[/JSON_DATA]" in part:
                             data_part = part.split("[/JSON_DATA]")[0].strip()
@@ -167,20 +171,25 @@ with tab1:
                                 if action == "create":
                                     new_ev = action_data.get("event")
                                     if new_ev:
-                                        # 필드 정합성 체크
-                                        if "시작시간" in new_ev and "내용" in new_ev:
+                                        # 💡 핵심: 기존 데이터와 비교하여 중복 추가 방지
+                                        is_duplicate = any(
+                                            ev.get("시작시간") == new_ev.get("시작시간") and 
+                                            ev.get("내용") == new_ev.get("내용") 
+                                            for ev in st.session_state.confirmed_events
+                                        )
+                                        if not is_duplicate:
                                             new_ev["카테고리"] = "카테고리 없음"
                                             st.session_state.confirmed_events.append(new_ev)
                                 
                                 elif action == "delete":
-                                    target_keyword = action_data.get("target_keyword")
-                                    if target_keyword:
+                                    target = action_data.get("target_keyword")
+                                    if target:
                                         st.session_state.confirmed_events = [
                                             ev for ev in st.session_state.confirmed_events 
-                                            if target_keyword not in ev.get("내용", "")
+                                            if target not in ev.get("내용", "")
                                         ]
-                            except Exception as json_err:
-                                st.error(f"데이터 처리 오류: {json_err}")
+                            except Exception as e:
+                                st.error(f"데이터 파싱 에러: {e}")
                 # ---------------------------------------------
                         pass
                         
