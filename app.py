@@ -141,36 +141,39 @@ with tab1:
                 )
                 raw_response = completion.choices[0].message.content
                 
-                if "[JSON_DATA]" in raw_response and "[/JSON_DATA]" in raw_response:
-                    try:
-                        data_part = raw_response.split("[JSON_DATA]")[1].split("[/JSON_DATA]")[0].strip()
-                        data_part = data_part.replace("```json", "").replace("```", "").strip()
-                        
-                        action_data = json.loads(data_part)
-                        action = action_data.get("action")
-                        
-                        if action == "create":
-                            new_ev = action_data.get("event")
-                            if new_ev:
-                                # 데이터가 잘 들어오는지 확인용 (디버깅)
-                                print(f"DEBUG: Adding event: {new_ev}") 
+# --- [수정된 부분: 모든 JSON 블록을 반복 처리] ---
+                if "[JSON_DATA]" in raw_response:
+                    # 답변 전체를 [JSON_DATA] 기준으로 쪼갭니다.
+                    parts = raw_response.split("[JSON_DATA]")
+                    
+                    # 0번 인덱스는 일반 텍스트이므로 1번부터 끝까지 루프
+                    for part in parts[1:]:
+                        if "[/JSON_DATA]" in part:
+                            data_part = part.split("[/JSON_DATA]")[0].strip()
+                            data_part = data_part.replace("```json", "").replace("```", "").strip()
+                            
+                            try:
+                                action_data = json.loads(data_part)
+                                action = action_data.get("action")
                                 
-                                # 필드 정합성 확보 (혹시 모를 키값 차이 방지)
-                                if "시작시간" in new_ev and "내용" in new_ev:
-                                    new_ev["카테고리"] = "카테고리 없음"
-                                    st.session_state.confirmed_events.append(new_ev)
-                                    st.success(f"일정 추가 완료: {new_ev['내용']}")
-                                else:
-                                    st.warning("AI가 보낸 데이터 형식이 올바르지 않습니다.")
-                        
-                        elif action == "delete":
-                            target_keyword = action_data.get("target_keyword")
-                            # 특정 키워드가 포함된 일정만 제거 (리스트 전체는 보존)
-                            st.session_state.confirmed_events = [
-                                ev for ev in st.session_state.confirmed_events 
-                                if target_keyword not in ev.get("내용", "")
-                            ]
-                    except Exception as json_err:
+                                if action == "create":
+                                    new_ev = action_data.get("event")
+                                    if new_ev:
+                                        # 필드 정합성 체크
+                                        if "시작시간" in new_ev and "내용" in new_ev:
+                                            new_ev["카테고리"] = "카테고리 없음"
+                                            st.session_state.confirmed_events.append(new_ev)
+                                
+                                elif action == "delete":
+                                    target_keyword = action_data.get("target_keyword")
+                                    if target_keyword:
+                                        st.session_state.confirmed_events = [
+                                            ev for ev in st.session_state.confirmed_events 
+                                            if target_keyword not in ev.get("내용", "")
+                                        ]
+                            except Exception as json_err:
+                                st.error(f"데이터 처리 오류: {json_err}")
+                # ---------------------------------------------
                         pass
                         
                 st.session_state.chat_messages.append({"role": "assistant", "content": raw_response})
