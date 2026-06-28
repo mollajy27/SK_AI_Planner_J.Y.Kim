@@ -190,8 +190,6 @@ with tab1:
 
 # ----------------- [Tab 2: 확정 일정표 및 카테고리 관리] -----------------
 with tab2:
-    st.write(f"DEBUG: 현재 confirmed_events 개수: {len(st.session_state.confirmed_events)}")
-    st.write(st.session_state.confirmed_events) # 데이터가 여기 찍히는지 보세요
     
     if st.session_state.confirmed_events:
         # 데이터 정렬 후 session_state에 리스트 형태로 즉시 재반영 (인덱스 일치를 위함)
